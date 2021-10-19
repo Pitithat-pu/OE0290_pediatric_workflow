@@ -1,0 +1,164 @@
+<configuration configurationType='project' name='WES_control_pediatric'
+               description='SNV and INDEL calling for call snv indel from WES of control samples.' imports="coBaseProject"
+               usedresourcessize="xl">
+	<availableAnalyses>
+		<!--<analysis id='genome' configuration='qcAnalysis' useplugin="AlignmentAndQCWorkflows:1.1.39" />-->
+		<!--<analysis id='exome' configuration='exomeAnalysis' useplugin="AlignmentAndQCWorkflows:1.1.39" />-->
+		<analysis id='snvCalling' configuration='snvCallingAnalysis' useplugin="SNVCallingWorkflow:1.2.166-3" />
+		<analysis id='indelCalling' configuration='indelCallingAnalysis' useplugin="IndelCallingWorkflow:2.2.0" />
+		<!--<analysis id='CNE' configuration='copyNumberEstimationAnalysis' useplugin="CopyNumberEstimationWorkflow:1.0.189" />-->
+
+		<!-- NOT MORE THAN 4 PIDs per DellyCall!  -->
+		<!--<analysis id="delly" configuration="dellyAnalysis" useplugin="DellyWorkflow:0.1.10-1" />-->
+	</availableAnalyses>
+	
+	
+	<configurationvalues>
+
+<!--		<cvalue name='RSCRIPT_BINARY' value='Rscript-3.3.1' /> -->
+
+		<cvalue name='PROJECT_ID' value="inform_pediatric_LB_WES" type="string"/>
+
+		<cvalue name='outputAllowAccessRightsModification' value='false' type="boolean"/>
+		<!--<cvalue name='outputAllowAccessRightsModification' value='true' type="boolean"/>-->
+
+		<!-- SET to NoControl for SNV calling and to controlAvailable for cnvkit -->
+		<cvalue name="GERMLINE_AVAILABLE" value="1" type="string"/>
+		<!--<cvalue name="GERMLINE_AVAILABLE" value="0" type="string"/>-->
+		<!--<cvalue name="isNoControlWorkflow" value="true" type="boolean"/>-->
+		<cvalue name="isNoControlWorkflow" value="false" type="boolean"/>
+		<cvalue name="sharedFilesBaseDirectory" value="/icgc/ngs_share/" type="string"/>
+
+		<!--#### EXTRA FILTERING -->
+		<!--#### BELOW VALUES WILL BE NEGLECTED WHEN GERMLINE_AVAILABLE IS SET -->
+		<!--## Filter switch -->
+		
+		<cvalue name="FILTER_ExAC" value="true" type="boolean" />
+		<cvalue name="FILTER_EVS" value="true" type="boolean" />
+		
+		<cvalue name="FILTER_1KGENOMES" value="true" type="boolean" />
+		<cvalue name="FILTER_LOCALCONTROL" value="true" type="boolean" />
+		<cvalue name="FILTER_NON_CLINIC" value="true" type="boolean" />
+		<cvalue name="FILTER_RECURRENCE" value="false" type="boolean" />
+
+		<!--## Filter criteria -->
+		<!--## The rows with corresponding values larger than below criteria will be filtered out. -->
+		<cvalue name="CRIT_ExAC_maxMAF" value="0.001" type="string" />
+		<cvalue name="CRIT_EVS_maxMAF" value="1.0" type="string" />
+		<cvalue name="CRIT_1KGENOMES_maxMAF" value="0.01" type="string" />
+		<cvalue name="CRIT_LOCALCONTROL_maxMAF" value="0.2" type="string" />
+		<!--#### END EXTRA FILTERING -->
+
+
+
+		<cvalue name="disableAutoBAMHeaderAnalysis" value="true" type="boolean"/>
+
+
+		<cvalue name='runFastQC' value='false' type='boolean'/>
+		<cvalue name='REFERENCE_GENOME' value='${referenceGenome_1KGRef}' type="path"/>
+		<cvalue name='INDEX_PREFIX' value='${indexPrefix_bwa06_1KGRef}' type="path"/>
+		<cvalue name='CHROM_SIZES_FILE' value='${chromosomeSizesFile_hs37}' type="path"/>
+		<cvalue name='CHROMOSOME_LENGTH_FILE' value='${chromosomeLengthFile_hg19}' />
+		<cvalue name='email' value='p.puranachot@dkfz.de' />
+
+		<cvalue name='PROJECT_NAME' value='pediatric_LiquidBiopsy'  type="string"/>
+
+		<cvalue name='WINDOW_SIZE' value='10' />
+
+<!--		<cvalue name='PYTHON_BINARY' value='/ibios/tbi_cluster/13.1/x86_64/bin/python' type="path"/>	-->
+
+
+		<!-- These are settings to be changed -->
+		<!-- Starting with the direcories and output file group -->
+		<cvalue name='inputBaseDirectory' value='/icgc/dkfzlsdf/analysis/OE0290_projects/pediatric_tumor/exon_sequencing/results_per_pid' type='path'/>
+		<cvalue name='outputBaseDirectory' value='/icgc/dkfzlsdf/analysis/OE0290_projects/pediatric_tumor/exon_sequencing/results_per_pid' type='path'/>
+		<cvalue name='outputAnalysisBaseDirectory' value='${outputBaseDirectory}/${pid}' type='path'/>
+		<cvalue name='outputFileGroup' value='W610-B062-PED'/>
+
+
+
+		<!--<cvalue name="useAtomicSampleNames" value="true" type="boolean"/>-->
+		<cvalue name="searchMergedBamFilesWithPID" value="false" type="boolean"/>
+
+		<cvalue name='possibleControlSampleNamePrefixes' value='( blood blood-01-01 control control00 control0 control01 control02 control03 )' type='bashArray'/>
+		<!--<cvalue name='possibleTumorSampleNamePrefixes' value='( plasma-01-01 plasma-01-02 plasma-01-03 plasma-02-01 plasma-03-01 plasma-04-01 plasma-05-01 serum-01-01 serum-plasma-01-01 csf-01-01 )' type='bashArray'/> -->
+		<cvalue name='possibleTumorSampleNamePrefixes' value='( plasma-01-01 )' type='bashArray'/>
+		<!--<cvalue name='mpileupOutputDirectory' value='mpileup'/>-->
+		<cvalue name='mpileupOutputDirectory' value='mpileup/${tumorSample}_${controlSample}' type="path"/>
+
+		<cvalue name='mpileupPlatypusOutputDirectory' value='indels/${tumorSample}_${controlSample}' type="path"/>
+
+		<!--specify how to find the correct bam files-->
+		<cvalue name="extractSamplesFromOutputFiles" value="true" type="boolean"/>
+		<!--<cvalue name='bamfile_list' value='( dummy )' type='string'/>-->
+
+
+		<!-- DON'T CHANGE ANYTHING FROM HERE ON !!! -->
+		<!-- Slim alignment workflow with PanCan settings -->
+		<cvalue name='useAcceleratedHardware' value='false' type="boolean"/>
+<!--		<cvalue name="BWA_BINARY" value="${bwaBinary_bwa078}" type="filename"/> -->
+		<cvalue name='useCombinedAlignAndSampe' value='true' type="boolean"/>
+		<cvalue name='runSlimWorkflow' value='true' type="boolean"/>
+
+		<!-- SNV mpileup calling settings -->
+		<cvalue name='runSecondFilterStep' value='false' type="boolean"/>
+		<!--<cvalue name="CONFIDENCE_OPTS" value='" -c 0 -x 1"' type="string" description="set to default settings."/>-->
+		<cvalue name="CONFIDENCE_OPTS" value='" -t 500 -c 0 -x 1 -l 1 -e 0 "' type="string" description="set to default settings."/>
+		<cvalue name='runOnPancan' value='true' type='boolean'/>
+		<cvalue name='MIN_CONFIDENCE_SCORE' value="7" type="integer"/>
+		<!-- Platypus Indel calling settings -->
+		<cvalue name="CALL_SNP" value="1" type="integer"/>
+		<cvalue name="runIndelVCFFilter" value="true" type="boolean"/>
+		<cvalue name="PLATYPUS_BUFFER_SIZE" value="100000" type="integer"/>
+		<cvalue name="PLATYPUS_MAX_READS" value="10000000" type="integer"/>
+		<!--<cvalue name="PLATYPUS_BINARY" value="/home/buchhalt/svn_buchhalt/buchhalt/third_party_tools/Platypus/bin/Platypus-0.8.1.py" type="path" />-->
+<!--		<cvalue name="PLATYPUS_BINARY" value="/ibios/tbi_cluster/13.1/x86_64/Platypus/Platypus_0.8.1/Platypus.py" type="path" /> -->
+<!--		<cvalue name='PYPY_BINARY' value='pypy-c' /> -->
+
+		<cvalue name='runTinda' value="true" type="boolean" description="Check for sample swaps."/>
+
+
+	</configurationvalues>
+<!--
+	<processingTools>
+        <tool name="snvFilter" value="filter_vcf.sh" basepath="snvPipeline">
+            <resourcesets>
+                <rset size="s" memory="1" cores="1" nodes="1" walltime="1"/>
+                <rset size="m" memory="1" cores="1" nodes="1" walltime="2"/>
+                <rset size="l" memory="1" cores="1" nodes="1" walltime="4"/>
+                <rset size="xl" memory="4" cores="1" nodes="1" walltime="800"/>
+            </resourcesets>
+            <input type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_VCF"/>
+            <input type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_RAW_VCF"/>
+            <input type="file" typeof="de.dkfz.b080.co.files.TumorBamFile" scriptparameter="TUMOR_BAMFILE_FULLPATH_BP"/>
+            <output type="tuple">
+                <output type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_VCF_SNVS"/>
+                <output type="file" typeof="de.dkfz.b080.co.files.TextFile" scriptparameter="FILENAME_CHECKPOINT"/>
+            </output>
+        </tool>
+
+        <tool name="snvFilterRerun" value="filter_vcf.sh" basepath="snvPipeline">
+            <resourcesets>
+                <rset size="s" memory="1" cores="1" nodes="1" walltime="1"/>
+                <rset size="m" memory="1" cores="1" nodes="1" walltime="2"/>
+                <rset size="l" memory="1" cores="1" nodes="1" walltime="3"/>
+                <rset size="xl" memory="4" cores="1" nodes="1" walltime="400"/>
+            </resourcesets>
+            <input type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_VCF"/>
+            <input type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_RAW_VCF"/>
+            <input type="file" typeof="de.dkfz.b080.co.files.TumorBamFile" scriptparameter="TUMOR_BAMFILE_FULLPATH_BP"/>
+            <input type="file" typeof="de.dkfz.b080.co.files.TextFile" scriptparameter="FILENAME_CHECKPOINT_FIRST_FILTER_RUN"/>
+            <output type="tuple">
+                <output type="file" typeof="de.dkfz.b080.co.files.SNVAnnotationFile" scriptparameter="FILENAME_VCF_SNVS"/>
+                <output type="file" typeof="de.dkfz.b080.co.files.TextFile" scriptparameter="FILENAME_CHECKPOINT"/>
+            </output>
+        </tool>
+	</processingTools>
+
+
+	<filenames package='de.dkfz.b080.co.files' filestagesbase='de.dkfz.b080.co.files.COFileStage'>
+		<filename class='VCFFileForSNVs' derivedFrom="TumorBamFile" pattern='${outputAnalysisBaseDirectory}/${mpileupOutputDirectory}/snvs_${pid}.${jobParameter,name="PARM_CHR_INDEX"}.vcf'/>
+	</filenames>
+-->
+</configuration>
+

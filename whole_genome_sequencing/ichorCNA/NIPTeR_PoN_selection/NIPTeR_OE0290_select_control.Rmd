@@ -1,0 +1,186 @@
+---
+title: "NIPTeR_OE0290_select_control"
+author: "Pitithat Puranachot"
+date: "12/7/2020"
+output: html_document
+---
+
+This document shows how to perform Panel-of-Normal (PoN) selection. After selecting a sample dataset whose coverage are not so extreme from each others. The result file (e.g. CoverageQC_passed_OE0290.tsv) of the previous step (e.g. OE0290_ped_AccelNGS_coverage_qc.html)  should be existed in the work directory of the R environment. If not, please find out where exactly the result file were saved.
+
+1. We set the path to results_per_pid directory.
+2. We will create a directory for hosting symbolic links to BAM file of selected samples. Set control_bam_dir to a directory that you have the writing permission
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("NIPTeR")
+library("dplyr")
+pid_dir="/omics/odcf/analysis/OE0290_projects/pediatric_tumor/whole_genome_sequencing/results_per_pid/"
+control_bam_dir = 
+  "/omics/groups/OE0436/internal/puranach/ctDNA/inform_liquidbiopsy/NIPTeR/control_samples_bams_OE0290_20201207"
+```
+
+3. We read the result file (CoverageQC_passed_OE0290.tsv). The PIDs of QC-passed samples will be used.
+
+```{r reading in QC-passed sample ids}
+
+qc_passed_samples_df =
+  read.delim("CoverageQC_passed_OE0290.tsv",
+           sep = "\t",stringsAsFactors = FALSE)
+
+sample_id_split = 
+  stringr::str_split_fixed(qc_passed_samples_df$sample_id, "_",2)
+colnames(sample_id_split) = c("sample_id","pid")
+
+qc_passed_samples_df = cbind(qc_passed_samples_df, sample_id_split)
+
+
+pids = as.character(qc_passed_samples_df$pid)
+
+```
+
+4. We create symbolic link to BAM file of the QC-passed samples. The directory defined by control_bam_dir will be created if it doesn't exist. The symbolic link will be create if it doen't exist.
+```{r create bam link into a directory}
+if(!dir.exists(control_bam_dir)) {
+  dir.create(control_bam_dir)
+} else { cat("Directory ",control_bam_dir,"already existed.")}
+
+for (row_num in seq(1:nrow(qc_passed_samples_df))) {
+  temp_row = qc_passed_samples_df[row_num,]
+  pid = temp_row$pid
+  sample_id = temp_row$sample_id
+  
+  sample_bam_dir = paste0(pid_dir,"/",pid,"/alignment_umi/")
+  
+  if(dir.exists(sample_bam_dir)){
+    sample_bam = 
+      paste0(sample_bam_dir,sample_id,
+             "_merged.mdup_groupbyUMI_callConsensus_realigned.bam")
+  }else {
+    sample_bam_dir = paste0(pid_dir,"/",pid,"/alignment/")
+    sample_bam = paste0(sample_bam_dir,sample_id,"_merged.mdup.bam")
+  }
+  
+  if (file.exists(sample_bam)) {
+    if (!file.exists(paste0(control_bam_dir,"/",basename(sample_bam)))) {
+      R.utils::createLink(paste0(control_bam_dir,"/",basename(sample_bam)),
+                          target=sample_bam,
+                          methods="unix-symlink")
+    }
+    
+  } else {
+    cat("File ",sample_bam, "doesn't exist.")
+  }
+  
+}
+
+```
+Symbolic link to BAM files should be created in the directory defined by control_bam_dir. Please make sure that they exist and are correctly linked.
+
+4. We will create NIPT object to be used as input of the following steps. Run create_nipt_object.R on every Symbolic-linked bam file. 
+
+Attendtion!!. This is an important step. Without NIPT object created, we cannot perform diagnose_control_group which help us to filter out aberrant samples.
+
+The example of bash command to iteratively submit bsub command for this step
+```
+for bamfile in /omics/groups/OE0436/internal/puranach/ctDNA/RStudioServer_Project/NIPTeR/control_samples_bams_OE0290_20201229*.bam; 
+do 
+cmd="module load R/3.6.0; Rscript /abi/data2/puranach/ct_DNA/NIPTeR/create_nipt_object.R ${bamfile}"; 
+echo ${cmd} | bsub -J create_nipt_object_$(basename ${bamfile} .bam) -R "rusage[mem=80GB]" -q long; 
+done
+
+```
+
+5. We read-in all NIPT object (.rds) files and create them as a control group
+```{r list all nipt object}
+
+nipt_obj_files = list.files(control_bam_dir,
+                             pattern = "[.mdup,realigned].rds$",
+                            full.names = T)
+
+nipt_obj_files = list.files(control_bam_dir,
+                             pattern = "realigned.rds$",
+                            full.names = T)
+
+nipt_obj_list = list()
+for (nipt_obj_file in nipt_obj_files) {
+  temp_nipt_obj = readRDS(nipt_obj_file)
+  nipt_obj_list[[basename(nipt_obj_file)]] = temp_nipt_obj
+}
+
+niptControl_obj_list = as_control_group(nipt_obj_list)
+
+```
+
+6. We run diagnose_control_group function to get a first group of aberrant samples.
+```{r get abberant sample}
+control_group_diagnostics <- diagnose_control_group(nipt_control_group = niptControl_obj_list)
+
+
+abberant_sample_table <-
+  table(control_group_diagnostics$abberant_scores$Sample_name)
+
+abberant_sample_names = names(which(abberant_sample_table>=2))
+
+```
+
+7. We remove those aberrant samples. The while-loop will keep running diagnose_control_group until no aberrant file is reported.
+
+```{r remove abberant sample from control group}
+while (length(abberant_sample_names) != 0) {
+  for (i in 1:length(abberant_sample_names)){
+  niptControl_obj_list <- remove_sample_controlgroup(
+    samplename = abberant_sample_names[i],
+    nipt_control_group = niptControl_obj_list)
+  }
+  
+  control_group_diagnostics <- 
+    diagnose_control_group(nipt_control_group = niptControl_obj_list)
+  
+  abberant_sample_table <-
+    table(control_group_diagnostics$abberant_scores$Sample_name)
+  
+  abberant_sample_names = names(which(abberant_sample_table>=2))
+}
+
+cat("Number of samples after NIPT filtering",length(niptControl_obj_list$samples))
+```
+From now on we call those NIPT object as clean samples.
+
+8. We derived the name of bamfile of those clean samples.
+```{r get control sample names}
+NIPT_control_group_separate_clean = niptControl_obj_list
+NIPT_clean_sample_name = names(NIPT_control_group_separate_clean$samples)
+NIPT_clean_sample_bamfilename=gsub(x=NIPT_clean_sample_name,
+                                   pattern = ".rds",".bam")
+
+```
+
+
+9. Finally, We write the location of clean BAM file named NIPT_clean_bamfiles.txt into the directory we defined as control_bam_dir.
+```{r find bam location of clean sample}
+
+bamfile_df = 
+  data.frame(filename = NIPT_clean_sample_bamfilename,
+             stringsAsFactors = FALSE)
+
+sample_id_split = as.data.frame(do.call(
+  rbind,strsplit(bamfile_df$filename,split = "_")))
+
+bamfile_df$PID = paste0(sample_id_split$V2,"_",sample_id_split$V3)            
+
+bamfile_df = mutate(bamfile_df, 
+                    fullpath = paste0(pid_dir,PID,"/alignment_umi/",
+                                      filename))
+
+bamfile_df = mutate(bamfile_df,
+                    if.exist=file.exists(fullpath))
+
+
+writeLines(bamfile_df$fullpath,
+           paste0(control_bam_dir,"/NIPT_clean_bamfiles.txt"))
+```
+
+
+
+```{r session info}
+sessionInfo()
+```

@@ -1,0 +1,232 @@
+---
+title: "OE0290_ped_AccelNGS_coverage_qc"
+author: "Pitithat Puranachot"
+date: "12/6/2020"
+output: html_document
+---
+
+This document shows how to perform selection of sample to be used for Panel-of-Normal selection. Basically, this following script will read genomic coverage files (in stat_coverage/*_CollectWgsMetrics.txt) and extract MEAN_COVERAGE of every sample defined in the variable pids.
+
+1. Set path to the analysis results_per_pid path. 
+2. Set a variable pids to indicate which pids in the results_per_pid will be included. In this case, we consider all pids of 1LB to 5LB samples.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+
+pid_dir="/icgc/dkfzlsdf/analysis/OE0290_projects/pediatric_tumor/whole_genome_sequencing/results_per_pid/"
+pids = dir(pid_dir, pattern = "^OE0290-PED_[1,2,3,4,5]LB")
+
+```
+
+
+3. For each pids, Read CollectWgsMetrics.txt files and finally make a data frame.
+```{r reading in coverage files into dataframe}
+coverage_stat_list = list()
+for (pid in pids) {
+  result_per_pid_dir = paste0(pid_dir,pid,"/")
+  if(!dir.exists(
+    paste0(result_per_pid_dir,"alignment_umi/stat_coverage/"))){
+    next
+    # pid_coverage_stat_dir =
+    #   paste0(result_per_pid_dir,"alignment/stat_coverage/")
+  }else {
+    pid_coverage_stat_dir = 
+      paste0(result_per_pid_dir,"alignment_umi/stat_coverage/")
+  }
+  
+  
+  
+  matrix_files = 
+    list.files(pid_coverage_stat_dir, pattern = "_CollectWgsMetrics.txt",
+               full.names = TRUE)
+  
+  for (matrix_file in matrix_files) {
+    sample_id = 
+      paste0(unlist(strsplit(basename(matrix_file),split="_"))[1:3],
+             collapse = "_")
+    stat_texts = read.delim(matrix_file, skip = 6,nrows = 1,sep="\t")
+    stat_texts$sample_id = sample_id
+    
+    coverage_stat_list[[sample_id]] =  stat_texts
+  }
+  
+}
+
+coverage_stat_df = do.call(rbind, coverage_stat_list)
+remove(coverage_stat_list)
+```
+
+This coverage_stat_df dataframe will contain the table of coverage statistic of all samples. 
+4. Now we plot the coverage distribution.
+
+```{r plot and check alignment coverage distribution}
+plot_coverage_distribution = function(coverage_stat_df){
+  test_normality = shapiro.test(coverage_stat_df$MEAN_COVERAGE)
+
+  test_normality$p.value
+  
+  
+  distribution_plot = ggplot(coverage_stat_df) + 
+    geom_histogram(aes(MEAN_COVERAGE),binwidth = 0.05) + 
+    theme_classic() + 
+    labs(x="Coverage",y="Sample Frequency (%)",
+         title = paste0("OE0290_pediatric: Coverage distribution (n=",
+                       nrow(coverage_stat_df),")"),
+         subtitle = paste0("shapiro normality test : ",
+                           signif(test_normality$p.value, digit=2))) + 
+    theme(panel.grid.major = element_line(),
+          plot.title = element_text(size = 16),
+          plot.subtitle = element_text(size=14),
+          axis.title = element_text(size=14),
+          axis.text = element_text(size=14)) + 
+    geom_vline(xintercept = mean(coverage_stat_df$MEAN_COVERAGE)) + 
+    geom_text(x= median(coverage_stat_df$MEAN_COVERAGE), y=0,
+              label=paste0("med. ",
+                           round(mean(coverage_stat_df$MEAN_COVERAGE),2)),
+              vjust = 1) 
+  return(distribution_plot)
+}
+
+
+plot_coverage_distribution(coverage_stat_df)
+
+```
+The shapiro normality test tells if the distribution of sample coverage is not normally distributed. The low p-value reject the hypothesis that the sample is normally distributed. Most of the time, the coverage distribution would show some outlier samples.
+
+5. We remove the outlier sample that distant away from the median coverage. The coverage will be scaled around zero with mean and sd. The distance from the median is calculated and sort in descending order. The p-value of shapiro test will be calculated. The script will tell how many outliner samples will be removed to pass the shapiro p-value > 0.05.
+```{r remove outlier samples}
+coverage_df = coverage_stat_df %>% 
+  select(sample_id, MEAN_COVERAGE)
+
+### Scaled the coverage around zero
+coverage_df$scaled_coverage = (coverage_df$MEAN_COVERAGE - mean(coverage_df$MEAN_COVERAGE)) / sd(coverage_df$MEAN_COVERAGE)
+
+### Calculate distance from the median coverage
+coverage_df$abs_distance_from_N50 = 
+  abs(coverage_df$scaled_coverage - median(coverage_df$scaled_coverage))
+
+### Sort the distance in descending order 
+coverage_df = 
+  coverage_df[order(coverage_df$abs_distance_from_N50,
+                    decreasing = TRUE),]
+
+### Perform shapiro test for first 150 outliers.
+shapiro_pvalue_list = list()
+for (delete_row in seq(nrow(coverage_df))) {
+  temp_coverage_df = coverage_df[seq(delete_row+1,nrow(coverage_df)),]
+  shapiro_pvalue_list[[coverage_df$sample_id[delete_row]]] = 
+    shapiro.test(temp_coverage_df$scaled_coverage)$p.value
+  names(shapiro_pvalue_list[[coverage_df$sample_id[delete_row]]])=
+    coverage_df$sample_id[delete_row]
+  if (delete_row==150) {
+    break
+  }
+}
+
+### Find the first outlier that pass the shapiro p-value 0.05.
+for (shapiro_pvalue in shapiro_pvalue_list) {
+  if(shapiro_pvalue >= 0.05) {
+    row_number = which(names(shapiro_pvalue_list) == names(shapiro_pvalue))
+    
+    break
+  }
+}
+cat("Remove first", row_number,
+    "outlier samples. The shapiro p-value :",round(shapiro_pvalue,3))
+```
+
+
+6. Plot the distribution of coverage after removing outlier samples
+```{r create dataframe with normal distributed coverage samples}
+
+norm_coverage_df = coverage_df %>% 
+  filter(!sample_id %in% names(shapiro_pvalue_list)[1:row_number])
+
+
+norm_coverage_df$zscore = (norm_coverage_df$MEAN_COVERAGE - mean(norm_coverage_df$MEAN_COVERAGE)) / sd(norm_coverage_df$MEAN_COVERAGE)
+
+
+norm_coverage_df$pvalue = round(pnorm(norm_coverage_df$zscore),3)
+norm_coverage_df = norm_coverage_df[order(norm_coverage_df$pvalue),]
+
+test_normality = shapiro.test(norm_coverage_df$zscore)
+
+test_normality$p.value
+
+
+plot_coverage_distribution(norm_coverage_df) +
+  labs(title = paste("Normalized Coverage distribution (n=",
+                       nrow(norm_coverage_df),")")) 
+```
+The coverage of dataset are assumed to be normally distributed. We will rescale the coverage again.
+
+7. Rescale the coverage from the mean and sd.
+```{r scale values}
+
+coverage_df$scaled_coverage = 
+  (coverage_df$MEAN_COVERAGE - 
+     mean(norm_coverage_df$MEAN_COVERAGE)) /
+  sd(norm_coverage_df$MEAN_COVERAGE)
+
+coverage_df = coverage_df[order(coverage_df$MEAN_COVERAGE),]
+
+```
+
+
+8. We convert the scaled coverage to probabilistic score and select samples with the score between 0.05 and 0.95.
+9. Finally plot the distribution of coverage and write the to file CoverageQC_passed_OE0290.tsv. 
+```{r calculate probabilistic score from the scaled coverage }
+coverage_df$pvalue = round(pnorm(coverage_df$scaled_coverage),3)
+
+filtered_samples = filter(coverage_df, pvalue < 0.05 | pvalue  >0.95)  %>% select(sample_id,MEAN_COVERAGE,pvalue)
+
+
+
+after_filtered_coverage_df = filter(coverage_df, pvalue >= 0.05, 
+                                    pvalue <=0.95)   %>% select(sample_id,MEAN_COVERAGE,pvalue)
+
+test_normality = shapiro.test(after_filtered_coverage_df$MEAN_COVERAGE)
+## get coverage cutoff ~ 0.2
+  # test_normality$p.value
+  
+  
+distribution_plot = ggplot(after_filtered_coverage_df) + 
+    geom_histogram(aes(MEAN_COVERAGE),binwidth = 0.05) + 
+    theme_classic() + 
+    labs(x="Coverage",y="Sample Frequency",
+         title = paste("OE0290_pediatric: Coverage distribution (n=",
+                       nrow(after_filtered_coverage_df),")"),
+         subtitle = paste0("shapiro normality test : ",
+                           signif(test_normality$p.value, digit=2))) + 
+    theme(panel.grid.major = element_line(),
+          plot.title = element_text(size = 16),
+          plot.subtitle = element_text(size=14),
+          axis.title = element_text(size=14),
+          axis.text = element_text(size=14)) + 
+    geom_vline(xintercept = 
+                 mean(after_filtered_coverage_df$MEAN_COVERAGE)) + 
+    geom_text(x= mean(after_filtered_coverage_df$MEAN_COVERAGE), y=0,
+              label=
+                paste0("avg.",round(mean(after_filtered_coverage_df$MEAN_COVERAGE),2)),
+              vjust = 1)  + 
+  geom_text(x=min(after_filtered_coverage_df$MEAN_COVERAGE), 
+            y=0, label=paste0("min.",round(min(after_filtered_coverage_df$MEAN_COVERAGE),2)))  + 
+  geom_text(x=max(after_filtered_coverage_df$MEAN_COVERAGE), 
+            y=0, label=paste0("max.",round(max(after_filtered_coverage_df$MEAN_COVERAGE),2)))
+
+
+# write.table(filtered_samples,"CoverageQC_fail_samples.tsv",sep="\t",row.names = FALSE)
+distribution_plot
+
+write.table(after_filtered_coverage_df,
+            "CoverageQC_passed_OE0290.tsv",
+            sep="\t",row.names = FALSE)
+
+```
+File CoverageQC_passed_OE0290.tsv will be used for selection of Panel-of-normal with NiPTER
+
+```{r show session info}
+sessionInfo()
+```

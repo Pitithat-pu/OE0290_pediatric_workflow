@@ -1,0 +1,34 @@
+<configuration
+        configurationType="project"
+        name="PANCAN_ALIGNMENT_WES_PAIRED_AlignmentAndQCWorkflows:1.2.73-2_v1_0"
+        description="Alignment configuration for project OE0290 pediatric tumor liquidbiopsy"
+        imports="otpAlignmentAndQCWorkflowsWES-1.3">
+ 
+    <subconfigurations>
+        <configuration name="config" usedresourcessize="xl">
+            <availableAnalyses>
+                <analysis id="WES" configuration="qcAnalysis" killswitches="FilenameSection"/>
+            </availableAnalyses>
+            <configurationvalues>
+ 
+                <cvalue name="useAcceleratedHardware" value="false" type="boolean"
+                    description=""/>
+ 
+                <!-- Merge tool -->
+                <cvalue name="markDuplicatesVariant" value="sambamba" type="string"
+                    description="Allowed values: biobambam, picard, sambamba. Default: empty. If set, this option takes precedence over the older useBioBamBamMarkDuplicates option."/>
+ 
+ 
+                <!-- BWA Version -->
+                <cvalue name="BWA_VERSION" value="0.7.15" type="string"
+                        description="Use e.g. 0.7.8-r2.05 for a specific revision of bb-bwa. Suffix with -bisulfite to load a bisulfite patched version."/>
+ 
+                <!-- Merging and Markdup version of sambamba -->
+                <cvalue name="SAMBAMBA_MARKDUP_VERSION" value="0.6.5" type="string"
+                description="Only used for duplication marking."/>
+ 
+ 
+            </configurationvalues>
+        </configuration>
+    </subconfigurations>
+</configuration>
